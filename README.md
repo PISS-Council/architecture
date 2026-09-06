@@ -124,3 +124,47 @@ ECE can raise its own trust level from the inside.
    and a real in-cluster call — never by the unit test suite alone,
    which is why that step is treated as mandatory before any change is
    considered shipped.
+
+## Verification: proving the claims above, not just stating them
+
+Principle 1 ("an agent's self-report is not evidence") applies to this
+document too. Rather than assert that HARNESS's governance guarantees
+hold, a black-box eval suite ran live against the deployed cluster,
+using the real `harness` CLI and the real chain — not mocks, not a
+staging environment, and no LLM calls anywhere in the eval logic itself
+(the one exception, a real completion proving the multi-provider claim,
+ran through a free non-Anthropic backend).
+
+**Result: 8/8 passing, checked against real chain evidence, not against
+the eval suite's own summary output:**
+
+- A signed marker verifies against the correct agent key and is applied
+  as a real chain entry.
+- A marker signed with the *wrong* key — a genuine HMAC mismatch, not
+  merely a missing key — is rejected (`marker.rejected`) and never
+  appears as a committed entry.
+- Two markers dropped with the same idempotency key collapse to exactly
+  one committed entry, with the duplicate explicitly noted on-chain
+  (`marker.duplicate`), not silently ignored or silently double-applied.
+- `claim_holds()` returns `False` for an action that was never actually
+  chained — an agent's own text claiming something happened does not
+  make it true.
+- A capability grant with a garbage signature is refused, fail-closed.
+- An inference request tagged with an unrecognized purpose routes to the
+  expensive/careful tier by default — a pure routing-table lookup, no
+  model call involved in the decision itself.
+- A non-Anthropic backend serves a real completion through the same code
+  path a governance session would use.
+
+**The eval process itself caught two mistakes before they became false
+claims**, which is worth recording precisely rather than smoothing over:
+an early pass used a test identity with no signing key mounted at all,
+so two checks initially "passed" for a *weaker* reason than intended
+(nothing was cryptographically verified because there was nothing to
+verify against, not because a real forgery was specifically caught) —
+and a third check's success condition couldn't tell "collapsed to one
+entry" apart from "both attempts silently failed," which a direct read
+of the real chain data exposed as the latter. All three were fixed and
+re-run against a correctly-provisioned identity before being counted as
+verified. An eval that can't catch its own false positives isn't
+verification — it's a second layer of self-report.
